@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<!-- =====================================================================
+     PROJETO: Plataforma de Mapeamento de Descarte Eletrônico - Goiânia
+     DISCIPLINA: Atividade Extensionista II - CST Análise e Desenvolvimento de Sistemas
+     AUTOR: Adamy Gianinni dos Santos | RU: 2600854
+     INSTITUIÇÃO: Centro Universitário Internacional UNINTER (Polo Goiânia - GO)
+     ANO: 2026
+     =====================================================================
+     
+     =====================================================================
+     CRÉDITOS DO FRONTEND
+     =====================================================================
+     
+     DESENVOLVIMENTO FRONTEND (HTML + CSS + JavaScript)
+       - Adamy Gianinni dos Santos (Autor principal)
+     
+     BIBLIOTECAS UTILIZADAS
+       - Leaflet.js (https://leafletjs.com) - Mapa interativo
+       - Google Fonts (https://fonts.google.com) - Fonte 'Inter'
+     
+     REFERÊNCIAS
+       - Documentação Leaflet: https://leafletjs.com/reference.html
+       - Guia de Estilo: Interface de dashboards modernos
+       - Dados de coleta: Programa Sukatech e Green Eletron
+     
+     ===================================================================== -->	 
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EletroDoa Goiânia - Mapa de Coleta e Inclusão Digital</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <header>
+        <div class="container header-content">
+            <div>
+                <h1>EletroDoa Goiânia</h1>
+                <p>Plataforma de Descarte Consciente, Logística Reversa e Inclusão Digital | Lei Municipal nº 11.049/2023</p>
+            </div>
+            <div class="tags">
+                <span class="badge sukatech">Sukatech GO</span>
+                <span class="badge greeneletron">Green Eletron</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container layout">
+        <!-- Barra Lateral com Filtros e Lista -->
+        <section class="sidebar">
+            <div class="card">
+                <h2>Pontos de Coleta Cadastrados</h2>
+                <input type="text" id="filtro" placeholder="Buscar por bairro ou local..." onkeyup="filtrarPontos()">
+                <div id="lista-pontos" class="lista-container">
+                    <!-- Gerado dinamicamente -->
+                </div>
+            </div>
+
+            <!-- Formulário de Sugestão / Novo Ponto -->
+            <div class="card form-card">
+    <h3>Sugerir Ponto / Escola</h3>
+    <p id="info-coordenadas" style="font-size: 0.75rem; color: #4a5568; margin-bottom: 8px;">
+        💡 Clique no mapa para marcar a posição exata.
+    </p>
+    <form id="form-cadastro" onsubmit="cadastrarPonto(event)">
+        <input type="hidden" id="lat_input">
+        <input type="hidden" id="lng_input">
+        <input type="text" id="nome" placeholder="Nome do Local / Instituição" required>
+        <input type="text" id="endereco" placeholder="Endereço (Rua, Número)" required>
+        <input type="text" id="bairro" placeholder="Bairro" required>
+        <input type="text" id="contato" placeholder="Telefone ou E-mail">
+        <button type="submit">Cadastrar no Mapa</button>
+    </form>
+</div>
+        </section>
+
+        <!-- Mapa -->
+        <section class="mapa-container">
+            <div id="map"></div>
+        </section>
+    </main>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+    // Inicializa o mapa centralizado na Praça Cívica de Goiânia
+    const map = L.map('map').setView([-16.6818, -49.2559], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let pontosData = [];
+    let markers = [];
+    let marcadorTemp = null;
+
+    // Quando o usuário clica no mapa, preenche os campos ocultos de coordenada
+    map.on('click', function(e) {
+        const { lat, lng } = e.latlng;
+        
+        if (marcadorTemp) {
+            map.removeLayer(marcadorTemp);
+        }
+        
+        marcadorTemp = L.marker([lat, lng], { opacity: 0.7 }).addTo(map);
+        marcadorTemp.bindPopup("Local selecionado para novo cadastro!").openPopup();
+        
+        document.getElementById('lat_input').value = lat.toFixed(6);
+        document.getElementById('lng_input').value = lng.toFixed(6);
+        document.getElementById('info-coordenadas').innerText = `📍 Coordenadas selecionadas: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    });
+
+    async function carregarPontos() {
+        const res = await fetch('/api/pontos');
+        pontosData = await res.json();
+        renderizarInterface(pontosData);
+    }
+
+    function renderizarInterface(pontos) {
+        const lista = document.getElementById('lista-pontos');
+        lista.innerHTML = '';
+        
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+
+        pontos.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'ponto-item';
+            div.innerHTML = `
+                <h4>${p.nome} <span class="tag-cat ${p.categoria.toLowerCase().replace(/\s+/g, '')}">${p.categoria}</span></h4>
+                <p>📍 ${p.endereco} - ${p.bairro}</p>
+                <p>🕒 ${p.horario}</p>
+                <p>📞 ${p.contato}</p>
+            `;
+            div.onclick = () => {
+                map.flyTo([p.latitude, p.longitude], 16);
+            };
+            lista.appendChild(div);
+
+            const marker = L.marker([p.latitude, p.longitude]).addTo(map);
+            marker.bindPopup(`
+                <div style="font-family: sans-serif;">
+                    <strong style="font-size: 1rem;">${p.nome}</strong><br>
+                    <span style="color: #2b6cb0; font-weight: bold;">${p.categoria}</span><br>
+                    <p style="margin: 4px 0;">${p.endereco} - ${p.bairro}</p>
+                    <small>🕒 ${p.horario}</small><br>
+                    <small>📞 ${p.contato}</small>
+                </div>
+            `);
+            markers.push(marker);
+        });
+    }
+
+    function filtrarPontos() {
+        const termo = document.getElementById('filtro').value.toLowerCase();
+        const filtrados = pontosData.filter(p => 
+            p.nome.toLowerCase().includes(termo) || 
+            p.bairro.toLowerCase().includes(termo) ||
+            p.categoria.toLowerCase().includes(termo)
+        );
+        renderizarInterface(filtrados);
+    }
+
+    async function cadastrarPonto(e) {
+        e.preventDefault();
+        
+        let lat = parseFloat(document.getElementById('lat_input').value);
+        let lng = parseFloat(document.getElementById('lng_input').value);
+
+        // Se não clicou no mapa, define a coordenada central da Praça Universitária como padrão
+        if (isNaN(lat) || isNaN(lng)) {
+            lat = -16.6802;
+            lng = -49.2415;
+        }
+
+        const novoPonto = {
+            nome: document.getElementById('nome').value,
+            endereco: document.getElementById('endereco').value,
+            bairro: document.getElementById('bairro').value,
+            contato: document.getElementById('contato').value,
+            categoria: "Comunidade / Escola",
+            latitude: lat,
+            longitude: lng
+        };
+
+        const res = await fetch('/api/pontos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(novoPonto)
+        });
+
+        if (res.ok) {
+            alert('Ponto cadastrado com sucesso na localização selecionada!');
+            document.getElementById('form-cadastro').reset();
+            document.getElementById('info-coordenadas').innerText = "Clique no mapa para marcar a localização exata.";
+            if (marcadorTemp) map.removeLayer(marcadorTemp);
+            
+            await carregarPontos();
+            map.flyTo([lat, lng], 16);
+        }
+    }
+
+    carregarPontos();
+</script>
+	
+	<footer style="text-align: center; padding: 12px; font-size: 0.8rem; color: #718096; background: #edf2f7; border-top: 1px solid #e2e8f0;">
+        Projeto Extensionista II — Análise e Desenvolvimento de Sistemas | Aluno: Adamy Gianinni dos Santos (RU: 2600854) | Goiânia - GO (2026)
+    </footer>
+</body>
+</html>
